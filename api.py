@@ -1,10 +1,35 @@
+import os
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 import json
 import base64
 import time
 
 app = Flask(__name__)
+CORS(app)
+
+# Token de acesso fixo
+API_TOKEN = "F0EHbyjo2eo3ZL9TDaimKZRR9Zl43epwBZKCgKARY2f8Dw0Z7eQDeshL3fE0FrPE"
+
+def validate_token():
+    """Validate the API token from request headers"""
+    auth_header = request.headers.get('Authorization')
+    
+    if not auth_header:
+        return False, "Authorization header is missing"
+        
+    try:
+        # Format esperado: "Bearer <token>"
+        scheme, token = auth_header.split()
+        if scheme.lower() != 'bearer':
+            return False, "Invalid authentication scheme"
+        if token != API_TOKEN:
+            return False, "Invalid token"
+            
+        return True, None
+    except Exception:
+        return False, "Invalid authorization header format"
 
 def load_config():
     """Load configuration from config.json file"""
@@ -18,6 +43,11 @@ def load_config():
             "client_secret": "",
             "cnpj_contratante": ""
         }
+
+def save_config(config_data):
+    """Save configuration to config.json file"""
+    with open('config.json', 'w') as f:
+        json.dump(config_data, f, indent=4)
 
 def get_auth_token(client_id, client_secret, cert_crt_file, cert_key_file):
     """Get authentication token from SERPRO API"""
@@ -110,6 +140,11 @@ def api_handler():
     start_time = time.time()
     
     try:
+        # Validate token
+        is_valid, error = validate_token()
+        if not is_valid:
+            return jsonify({"error": f"Authentication failed: {error}"}), 401
+            
         # Get request data
         request_data = request.json
         
@@ -187,5 +222,14 @@ def api_handler():
             "execution_time": execution_time
         }), 500
 
+@app.route('/', methods=['GET'])
+def index():
+    """Root endpoint to check if the API is running"""
+    return jsonify({
+        "status": "online",
+        "message": "API Integra Contador is running"
+    })
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=True, port=port, host='0.0.0.0')
