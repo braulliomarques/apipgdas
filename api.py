@@ -1,13 +1,10 @@
-import os
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 import requests
 import json
 import base64
 import time
 
 app = Flask(__name__)
-CORS(app)
 
 def load_config():
     """Load configuration from config.json file"""
@@ -21,11 +18,6 @@ def load_config():
             "client_secret": "",
             "cnpj_contratante": ""
         }
-
-def save_config(config_data):
-    """Save configuration to config.json file"""
-    with open('config.json', 'w') as f:
-        json.dump(config_data, f, indent=4)
 
 def get_auth_token(client_id, client_secret, cert_crt_file, cert_key_file):
     """Get authentication token from SERPRO API"""
@@ -64,7 +56,7 @@ def get_auth_token(client_id, client_secret, cert_crt_file, cert_key_file):
     except Exception as e:
         return None, str(e)
 
-def make_api_request(cnpj_contribuinte, id_servico, versao_sistema, dados, headers):
+def make_api_request(tipo, cnpj_contribuinte, id_servico, versao_sistema, dados, headers):
     """Make request to SERPRO API with the provided parameters"""
     config = load_config()
     cnpj_contratante = config['cnpj_contratante']
@@ -90,20 +82,31 @@ def make_api_request(cnpj_contribuinte, id_servico, versao_sistema, dados, heade
         }
     }
     
+    # Determine the URL based on the tipo
+    url_map = {
+        'consultar': 'https://gateway.apiserpro.serpro.gov.br/integra-contador/v1/Consultar',
+        'emitir': 'https://gateway.apiserpro.serpro.gov.br/integra-contador/v1/Emitir',
+        'declarar': 'https://gateway.apiserpro.serpro.gov.br/integra-contador/v1/Declarar'
+    }
+    
+    url = url_map.get(tipo)
+    if not url:
+        return None, f"Invalid operation type: {tipo}"
+    
     try:
         response = requests.post(
-            'https://gateway.apiserpro.serpro.gov.br/integra-contador/v1/Consultar',
+            url,
             headers=headers,
             json=json_data,
             timeout=30  # Timeout de 30 segundos
         )
-        return response
+        return response, None
     except requests.RequestException as e:
-        return None
+        return None, str(e)
 
-@app.route('/api/consultar', methods=['POST'])
-def consultar_api():
-    """API endpoint to process requests with CNPJ, idServico, versaoSistema, and dados parameters"""
+@app.route('/api', methods=['POST'])
+def api_handler():
+    """API endpoint to handle different operation types"""
     start_time = time.time()
     
     try:
@@ -114,14 +117,16 @@ def consultar_api():
             return jsonify({"error": "No data provided"}), 400
             
         # Extract parameters
+        tipo = request_data.get('tipo')
         cnpj_contribuinte = request_data.get('cnpj')
         id_servico = request_data.get('idServico')
         versao_sistema = request_data.get('versaoSistema')
         dados = request_data.get('dados')
         
         # Validate required parameters
-        if not all([cnpj_contribuinte, id_servico, versao_sistema, dados]):
+        if not all([tipo, cnpj_contribuinte, id_servico, versao_sistema, dados]):
             missing = []
+            if not tipo: missing.append('tipo')
             if not cnpj_contribuinte: missing.append('cnpj')
             if not id_servico: missing.append('idServico')
             if not versao_sistema: missing.append('versaoSistema')
@@ -152,36 +157,21 @@ def consultar_api():
         }
         
         # Make API request
-        response = make_api_request(cnpj_contribuinte, id_servico, versao_sistema, dados, headers)
+        response, error = make_api_request(tipo, cnpj_contribuinte, id_servico, versao_sistema, dados, headers)
         
+        if error:
+            return jsonify({"error": error}), 400
+            
         if response is None:
             return jsonify({"error": "Failed to connect to the API"}), 500
             
-        # Process response
-        if response.status_code != 200:
-            error_message = "Unknown error"
-            try:
-                error_data = response.json()
-                if 'mensagens' in error_data and len(error_data['mensagens']) > 0:
-                    error_message = error_data['mensagens'][0]['texto']
-            except:
-                error_message = f"Status code: {response.status_code}"
-                
-            return jsonify({
-                "success": False,
-                "error": error_message,
-                "status_code": response.status_code
-            }), response.status_code
-        
         # Return successful response
-        result = response.json()
-        
         end_time = time.time()
         execution_time = end_time - start_time
         
         return jsonify({
             "success": True,
-            "data": result,
+            "data": response.json(),
             "execution_time": execution_time
         })
         
@@ -195,14 +185,5 @@ def consultar_api():
             "execution_time": execution_time
         }), 500
 
-@app.route('/', methods=['GET'])
-def index():
-    """Root endpoint to check if the API is running"""
-    return jsonify({
-        "status": "online",
-        "message": "API Integra Contador is running"
-    })
-
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, port=port, host='0.0.0.0') 
+    app.run(debug=True)
