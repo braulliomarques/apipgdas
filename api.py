@@ -56,7 +56,7 @@ def get_auth_token(client_id, client_secret, cert_crt_file, cert_key_file):
     except Exception as e:
         return None, str(e)
 
-def make_api_request(tipo, cnpj_contribuinte, id_servico, versao_sistema, dados, headers):
+def make_api_request(tipo, cnpj_contribuinte, id_sistema, id_servico, versao_sistema, dados, headers):
     """Make request to SERPRO API with the provided parameters"""
     config = load_config()
     cnpj_contratante = config['cnpj_contratante']
@@ -75,7 +75,7 @@ def make_api_request(tipo, cnpj_contribuinte, id_servico, versao_sistema, dados,
             "tipo": 2
         },
         "pedidoDados": {
-            "idSistema": "PGDASD",
+            "idSistema": id_sistema,
             "idServico": id_servico,
             "versaoSistema": versao_sistema,
             "dados": dados
@@ -119,15 +119,17 @@ def api_handler():
         # Extract parameters
         tipo = request_data.get('tipo')
         cnpj_contribuinte = request_data.get('cnpj')
+        id_sistema = request_data.get('idSistema')
         id_servico = request_data.get('idServico')
         versao_sistema = request_data.get('versaoSistema')
         dados = request_data.get('dados')
         
         # Validate required parameters
-        if not all([tipo, cnpj_contribuinte, id_servico, versao_sistema, dados]):
+        if not all([tipo, cnpj_contribuinte, id_sistema, id_servico, versao_sistema, dados]):
             missing = []
             if not tipo: missing.append('tipo')
             if not cnpj_contribuinte: missing.append('cnpj')
+            if not id_sistema: missing.append('idSistema')
             if not id_servico: missing.append('idServico')
             if not versao_sistema: missing.append('versaoSistema')
             if not dados: missing.append('dados')
@@ -157,7 +159,7 @@ def api_handler():
         }
         
         # Make API request
-        response, error = make_api_request(tipo, cnpj_contribuinte, id_servico, versao_sistema, dados, headers)
+        response, error = make_api_request(tipo, cnpj_contribuinte, id_sistema, id_servico, versao_sistema, dados, headers)
         
         if error:
             return jsonify({"error": error}), 400
