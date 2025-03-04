@@ -101,22 +101,9 @@ def make_api_request(cnpj_contribuinte, id_servico, versao_sistema, dados, heade
     except requests.RequestException as e:
         return None
 
-def process_request(tipo, cnpj_contribuinte, id_servico, versao_sistema, dados, headers):
-    """Process the request based on the operation type"""
-    if tipo == 'consultar':
-        return make_api_request(cnpj_contribuinte, id_servico, versao_sistema, dados, headers)
-    elif tipo == 'emitir':
-        # Implement logic for emitir operation
-        return jsonify({"message": "Emitir operation not implemented yet"}), 501
-    elif tipo == 'declarar':
-        # Implement logic for declarar operation 
-        return jsonify({"message": "Declarar operation not implemented yet"}), 501
-    else:
-        return None, f"Invalid operation type: {tipo}"
-
-@app.route('/api/<tipo>', methods=['POST'])
-def api_handler(tipo):
-    """API endpoint to handle different operation types"""
+@app.route('/api/consultar', methods=['POST'])
+def consultar_api():
+    """API endpoint to process requests with CNPJ, idServico, versaoSistema, and dados parameters"""
     start_time = time.time()
     
     try:
@@ -164,22 +151,37 @@ def api_handler(tipo):
             'jwt_token': auth_result["jwt_token"],
         }
         
-        # Process the request based on operation type
-        response, error = process_request(tipo, cnpj_contribuinte, id_servico, versao_sistema, dados, headers)
-        
-        if error:
-            return jsonify({"error": error}), 400
+        # Make API request
+        response = make_api_request(cnpj_contribuinte, id_servico, versao_sistema, dados, headers)
         
         if response is None:
             return jsonify({"error": "Failed to connect to the API"}), 500
             
+        # Process response
+        if response.status_code != 200:
+            error_message = "Unknown error"
+            try:
+                error_data = response.json()
+                if 'mensagens' in error_data and len(error_data['mensagens']) > 0:
+                    error_message = error_data['mensagens'][0]['texto']
+            except:
+                error_message = f"Status code: {response.status_code}"
+                
+            return jsonify({
+                "success": False,
+                "error": error_message,
+                "status_code": response.status_code
+            }), response.status_code
+        
         # Return successful response
+        result = response.json()
+        
         end_time = time.time()
         execution_time = end_time - start_time
         
         return jsonify({
             "success": True,
-            "data": response.json() if response else None,
+            "data": result,
             "execution_time": execution_time
         })
         
